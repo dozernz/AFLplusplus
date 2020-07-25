@@ -129,7 +129,7 @@
    however the upper limit is 255 - or less if the fuzz_length is < 1000 bytes
 */   
 
-#define MAX_HAVOC_STACK_COUNT 
+#define MAX_HAVOC_STACK_COUNT 16
 
 /* Caps on block sizes for cloning and deletion operations. Each of these
    ranges has a 33% probability of getting picked, except for the first
