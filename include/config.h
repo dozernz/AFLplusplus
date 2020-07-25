@@ -120,16 +120,16 @@
 #define POWER_BETA 1
 #define MAX_FACTOR (POWER_BETA * 32)
 
-/* Maximum stacking for havoc-stage tweaks. The actual value is calculated
-   like this:
+/* Initial stacking for havoc-stage tweaks.
+   The actual value is calculated like this:
 
-   n = random between 1 and HAVOC_STACK_POW2
-   stacking = 2^n
+   n = random between 1 and (HAVOC_STACK + (fuzz_length >> 8))
+   n += cycles + cycles_without_finds
+   
+   however the upper limit is 255 - or less if the fuzz_length is < 1000 bytes
+*/   
 
-   In other words, the default (n = 7) produces 2, 4, 8, 16, 32, 64, or
-   128 stacked tweaks: */
-
-#define HAVOC_STACK_POW2 7
+#define MAX_HAVOC_STACK_COUNT 
 
 /* Caps on block sizes for cloning and deletion operations. Each of these
    ranges has a 33% probability of getting picked, except for the first

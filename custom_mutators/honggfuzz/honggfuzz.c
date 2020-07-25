@@ -120,7 +120,7 @@ size_t afl_custom_fuzz(my_mutator_t *data, uint8_t *buf, size_t buf_size,
   *out_buf = data->mutator_buf;
 
   /* the mutation */
-  mangle_mangleContent(&run, NUMBER_OF_MUTATIONS);
+  mangle_mangleContent(&run, NUMBER_OF_MUTATIONS + afl->cycles_wo_finds/* + afl->expand_havoc*/);
 
   /* return size of mutated data */
   return run.dynfile->size;
