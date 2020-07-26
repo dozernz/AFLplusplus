@@ -1857,11 +1857,16 @@ havoc_stage:
   for (afl->stage_cur = 0; afl->stage_cur < afl->stage_max; ++afl->stage_cur) {
 
     u32 use_stacking;
-    
-    use_stacking = 1 + rand_below(afl, MAX_HAVOC_STACK_COUNT) + rand_below(afl, temp_len >> 8);
-    if (unlikely(afl->queue_cycle)) use_stacking += afl->queue_cycle + afl->cycles_wo_finds;
-    use_stacking = MIN((1 + /*afl->expand_havoc +*/ (temp_len >> 2)), use_stacking);
-    use_stacking = MIN(255, use_stacking);
+
+    use_stacking = 1 + rand_below(afl, MAX_HAVOC_STACK_COUNT) +
+                   rand_below(afl, temp_len >> 8);
+    if (unlikely(afl->queue_cycle))
+      use_stacking += afl->queue_cycle + afl->cycles_wo_finds;
+    if (unlikely(temp_len >= 1016))
+      use_stacking = MIN(255, use_stacking);
+    else
+      use_stacking =
+          MIN((1 + /*afl->expand_havoc +*/ (temp_len >> 2)), use_stacking);
 
     afl->stage_cur_val = use_stacking;
 
@@ -3830,7 +3835,8 @@ pacemaker_fuzzing:
       for (afl->stage_cur = 0; afl->stage_cur < afl->stage_max;
            ++afl->stage_cur) {
 
-        u32 use_stacking = 1 + (1 + rand_below(afl, MAX_HAVOC_STACK_COUNT << 4));
+        u32 use_stacking =
+            1 + (1 + rand_below(afl, MAX_HAVOC_STACK_COUNT << 4));
 
         afl->stage_cur_val = use_stacking;
 

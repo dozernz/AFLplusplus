@@ -125,9 +125,9 @@
 
    n = random between 1 and (HAVOC_STACK + (fuzz_length >> 8))
    n += cycles + cycles_without_finds
-   
+
    however the upper limit is 255 - or less if the fuzz_length is < 1000 bytes
-*/   
+*/
 
 #define MAX_HAVOC_STACK_COUNT 16
 
