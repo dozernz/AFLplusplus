@@ -1877,15 +1877,19 @@ havoc_stage:
 
     u32 use_stacking;
 
-    use_stacking = 1 + rand_below(afl, MAX_HAVOC_STACK_COUNT) +
-                   rand_below(afl, temp_len >> 8);
+    use_stacking =
+        1 + (rand_below(afl, MAX_HAVOC_STACK_COUNT) << 1) + afl->expand_havoc;
+    if (unlikely(temp_len >= 8192))
+      use_stacking += rand_below(afl, temp_len >> 8);
+    else
+      use_stacking += rand_below(afl, 16);
     if (unlikely(afl->queue_cycle))
       use_stacking += afl->queue_cycle + afl->cycles_wo_finds;
-    if (unlikely(temp_len >= 1016))
+    if (unlikely(temp_len >= 1024))
       use_stacking = MIN(255, use_stacking);
     else
       use_stacking =
-          MIN((1 + /*afl->expand_havoc +*/ (temp_len >> 2)), use_stacking);
+          MIN((1 + afl->expand_havoc + (temp_len >> 2)), use_stacking);
 
     afl->stage_cur_val = use_stacking;
 
