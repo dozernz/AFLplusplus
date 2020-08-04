@@ -143,6 +143,8 @@ static void usage(afl_state_t *afl, u8 *argv0, int more_help) {
       //"  -B bitmap.txt - mutate a specific test case, use the out/fuzz_bitmap
       //" "file\n"
       "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
+      "  -b cpu_id     - bind the fuzzing process to the specified CPU core "
+      "(0-...)\n"
       "  -e ext        - file extension for the fuzz test input file (if "
       "needed)\n\n",
       argv0, EXEC_TIMEOUT, MEM_LIMIT, FOREIGN_SYNCS_MAX);
@@ -161,11 +163,13 @@ static void usage(afl_state_t *afl, u8 *argv0, int more_help) {
       "AFL_BENCH_UNTIL_CRASH: exit soon when the first crashing input has been found\n"
       "AFL_CUSTOM_MUTATOR_LIBRARY: lib with afl_custom_fuzz() to mutate inputs\n"
       "AFL_CUSTOM_MUTATOR_ONLY: avoid AFL++'s internal mutators\n"
+      "AFL_CYCLE_SCHEDULES: after completing a cycle, switch to a different -p schedule\n"
       "AFL_DEBUG: extra debugging output for Python mode trimming\n"
       "AFL_DEBUG_CHILD_OUTPUT: do not suppress stdout/stderr from target\n"
       "AFL_DISABLE_TRIM: disable the trimming of test cases\n"
       "AFL_DUMB_FORKSRV: use fork server without feedback from target\n"
       "AFL_EXIT_WHEN_DONE: exit when all inputs are run and no new finds are found\n"
+      "AFL_EXPAND_HAVOC_NOW: immediately enable expand havoc mode (default: after 60 minutes and a cycle without finds)\n"
       "AFL_FAST_CAL: limit the calibration stage to three cycles for speedup\n"
       "AFL_FORCE_UI: force showing the status screen (for virtual consoles)\n"
       "AFL_HANG_TMOUT: override timeout value (in milliseconds)\n"
@@ -271,15 +275,26 @@ int main(int argc, char **argv_orig, char **envp) {
 
   afl->shmem_testcase_mode = 1;  // we always try to perform shmem fuzzing
 
-  while ((opt = getopt(argc, argv,
-                       "+c:i:I:o:f:F:m:t:T:dDnCB:S:M:x:QNUWe:p:s:V:E:L:hRP:")) >
-         0) {
+  while ((opt = getopt(
+              argc, argv,
+              "+b:c:i:I:o:f:F:m:t:T:dDnCB:S:M:x:QNUWe:p:s:V:E:L:hRP:")) > 0) {
 
     switch (opt) {
 
       case 'I':
         afl->infoexec = optarg;
         break;
+
+      case 'b': {                                          /* bind CPU core */
+
+        if (afl->cpu_to_bind != -1) FATAL("Multiple -b options not supported");
+
+        if (sscanf(optarg, "%u", &afl->cpu_to_bind) < 0 || optarg[0] == '-')
+          FATAL("Bad syntax used for -b");
+
+        break;
+
+      }
 
       case 'c': {
 
@@ -1042,6 +1057,11 @@ int main(int argc, char **argv_orig, char **envp) {
   bind_to_free_cpu(afl);
   #endif                                                   /* HAVE_AFFINITY */
 
+  #ifdef __HAIKU__
+  /* Prioritizes performance over power saving */
+  set_scheduler_mode(SCHEDULER_MODE_LOW_LATENCY);
+  #endif
+
   afl->fsrv.trace_bits =
       afl_shm_init(&afl->shm, afl->fsrv.map_size, afl->non_instrumented_mode);
 
@@ -1284,7 +1304,8 @@ int main(int argc, char **argv_orig, char **envp) {
               afl->expand_havoc = 1;
               break;
             case 1:
-              if (afl->limit_time_sig == 0) {
+              if (afl->limit_time_sig == 0 && !afl->custom_only &&
+                  !afl->python_only) {
 
                 afl->limit_time_sig = -1;
                 afl->limit_time_puppet = 0;

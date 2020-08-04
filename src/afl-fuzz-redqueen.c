@@ -269,8 +269,7 @@ static long long strntoll(const char *str, size_t sz, char **end, int base) {
   long long   ret;
   const char *beg = str;
 
-  for (; beg && sz && *beg == ' '; beg++, sz--)
-    ;
+  for (; beg && sz && *beg == ' '; beg++, sz--) {};
 
   if (!sz || sz >= sizeof(buf)) {
 
@@ -319,6 +318,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
                               u64 pattern, u64 repl, u64 o_pattern, u32 idx,
                               u8 *orig_buf, u8 *buf, u32 len, u8 do_reverse,
                               u8 *status) {
+
+  if (!buf) { FATAL("BUG: buf was NULL. Please report this.\n"); }
 
   u64 *buf_64 = (u64 *)&buf[idx];
   u32 *buf_32 = (u32 *)&buf[idx];
@@ -672,14 +673,15 @@ static u8 rtn_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   for (i = 0; i < its_len; ++i) {
 
-    if (pattern[idx + i] != buf[idx + i] ||
-        o_pattern[idx + i] != orig_buf[idx + i] || *status == 1) {
+    if (pattern[i] != buf[idx + i] || o_pattern[i] != orig_buf[idx + i] ||
+        *status == 1) {
 
       break;
 
     }
 
-    buf[idx + i] = repl[idx + i];
+    buf[idx + i] = repl[i];
+
     if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
 
   }

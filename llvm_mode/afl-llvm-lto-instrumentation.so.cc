@@ -86,9 +86,9 @@ class AFLLTOPass : public ModulePass {
   bool runOnModule(Module &M) override;
 
  protected:
-  int      afl_global_id = 1, debug = 0, autodictionary = 1;
+  int      afl_global_id = 1, autodictionary = 0;
   uint32_t function_minimum_size = 1;
-  uint32_t be_quiet = 0, inst_blocks = 0, inst_funcs = 0, total_instr = 0;
+  uint32_t inst_blocks = 0, inst_funcs = 0, total_instr = 0;
   uint64_t map_addr = 0x10000;
   char *   skip_nozero = NULL;
 
@@ -103,6 +103,12 @@ bool AFLLTOPass::runOnModule(Module &M) {
   std::vector<CallInst *>          calls;
   DenseMap<Value *, std::string *> valueMap;
   char *                           ptr;
+  FILE *                           documentFile = NULL;
+
+  srand((unsigned int)time(NULL));
+
+  unsigned long long int moduleID =
+      (((unsigned long long int)(rand() & 0xffffffff)) << 32) | getpid();
 
   IntegerType *Int8Ty = IntegerType::getInt8Ty(C);
   IntegerType *Int32Ty = IntegerType::getInt32Ty(C);
@@ -120,11 +126,18 @@ bool AFLLTOPass::runOnModule(Module &M) {
 
     be_quiet = 1;
 
+  if ((ptr = getenv("AFL_LLVM_DOCUMENT_IDS")) != NULL) {
+
+    if ((documentFile = fopen(ptr, "a")) == NULL)
+      WARNF("Cannot access document file %s", ptr);
+
+  }
+
+  if (getenv("AFL_LLVM_LTO_AUTODICTIONARY")) autodictionary = 1;
+
   if (getenv("AFL_LLVM_MAP_DYNAMIC")) map_addr = 0;
 
-  if (getenv("AFL_LLVM_INSTRIM_SKIPSINGLEBLOCK") ||
-      getenv("AFL_LLVM_SKIPSINGLEBLOCK"))
-    function_minimum_size = 2;
+  if (getenv("AFL_LLVM_SKIPSINGLEBLOCK")) function_minimum_size = 2;
 
   if ((ptr = getenv("AFL_LLVM_MAP_ADDR"))) {
 
@@ -183,13 +196,32 @@ bool AFLLTOPass::runOnModule(Module &M) {
   ConstantInt *Zero = ConstantInt::get(Int8Ty, 0);
   ConstantInt *One = ConstantInt::get(Int8Ty, 1);
 
+  /* This dumps all inialized global strings - might be useful in the future
+  for (auto G=M.getGlobalList().begin(); G!=M.getGlobalList().end(); G++) {
+
+    GlobalVariable &GV=*G;
+    if (!GV.getName().str().empty()) {
+
+      fprintf(stderr, "Global Variable: %s", GV.getName().str().c_str());
+      if (GV.hasInitializer())
+        if (auto *Val = dyn_cast<ConstantDataArray>(GV.getInitializer()))
+          fprintf(stderr, " Value: \"%s\"", Val->getAsString().str().c_str());
+      fprintf(stderr, "\n");
+
+    }
+
+  }
+
+  */
+
   /* Instrument all the things! */
 
   int inst_blocks = 0;
 
   for (auto &F : M) {
 
-    // fprintf(stderr, "DEBUG: Function %s\n", F.getName().str().c_str());
+    // fprintf(stderr, "DEBUG: Module %s Function %s\n",
+    // M.getName().str().c_str(), F.getName().str().c_str());
 
     if (F.size() < function_minimum_size) continue;
     if (isIgnoreFunction(&F)) continue;
@@ -200,7 +232,8 @@ bool AFLLTOPass::runOnModule(Module &M) {
 
       if (debug)
         fprintf(stderr,
-                "DEBUG: Function %s is not the instrument file listed\n",
+                "DEBUG: Function %s is not in a source file that was specified "
+                "in the instrument file list\n",
                 F.getName().str().c_str());
       continue;
 
@@ -532,6 +565,8 @@ bool AFLLTOPass::runOnModule(Module &M) {
 
       uint32_t succ = 0;
 
+      if (F.size() == 1) InsBlocks.push_back(&BB);
+
       for (succ_iterator SI = succ_begin(&BB), SE = succ_end(&BB); SI != SE;
            ++SI)
         if ((*SI)->size() > 0) succ++;
@@ -550,9 +585,12 @@ bool AFLLTOPass::runOnModule(Module &M) {
       do {
 
         --i;
+        BasicBlock *              newBB;
         BasicBlock *              origBB = &(*InsBlocks[i]);
         std::vector<BasicBlock *> Successors;
         Instruction *             TI = origBB->getTerminator();
+        uint32_t                  fs = origBB->getParent()->size();
+        uint32_t                  countto;
 
         for (succ_iterator SI = succ_begin(origBB), SE = succ_end(origBB);
              SI != SE; ++SI) {
@@ -562,20 +600,37 @@ bool AFLLTOPass::runOnModule(Module &M) {
 
         }
 
-        if (TI == NULL || TI->getNumSuccessors() < 2) continue;
+        if (fs == 1) {
+
+          newBB = origBB;
+          countto = 1;
+
+        } else {
+
+          if (TI == NULL || TI->getNumSuccessors() < 2) continue;
+          countto = Successors.size();
+
+        }
 
         // if (Successors.size() != TI->getNumSuccessors())
         //  FATAL("Different successor numbers %lu <-> %u\n", Successors.size(),
         //        TI->getNumSuccessors());
 
-        for (uint32_t j = 0; j < Successors.size(); j++) {
+        for (uint32_t j = 0; j < countto; j++) {
 
-          BasicBlock *newBB = llvm::SplitEdge(origBB, Successors[j]);
+          if (fs != 1) newBB = llvm::SplitEdge(origBB, Successors[j]);
 
           if (!newBB) {
 
             if (!be_quiet) WARNF("Split failed!");
             continue;
+
+          }
+
+          if (documentFile) {
+
+            fprintf(documentFile, "ModuleID=%llu Function=%s edgeID=%u\n",
+                    moduleID, F.getName().str().c_str(), afl_global_id);
 
           }
 
@@ -611,7 +666,7 @@ bool AFLLTOPass::runOnModule(Module &M) {
 
           Value *Incr = IRB.CreateAdd(Counter, One);
 
-          if (skip_nozero) {
+          if (skip_nozero == NULL) {
 
             auto cf = IRB.CreateICmpEQ(Incr, Zero);
             auto carry = IRB.CreateZExt(cf, Int8Ty);
@@ -633,6 +688,9 @@ bool AFLLTOPass::runOnModule(Module &M) {
     }
 
   }
+
+  if (documentFile) fclose(documentFile);
+  documentFile = NULL;
 
   // save highest location ID to global variable
   // do this after each function to fail faster

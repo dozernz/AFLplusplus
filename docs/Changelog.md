@@ -10,12 +10,16 @@ sending a mail to <afl-users+subscribe@googlegroups.com>.
 
 
 ### Version ++2.66d (devel)
+  - Support for improved afl++ snapshot module:
+    https://github.com/AFLplusplus/AFL-Snapshot-LKM
   - afl-fuzz:
      - added -F option to allow -M main fuzzers to sync to foreign fuzzers,
        e.g. honggfuzz or libfuzzer
+     - added -b option to bind to a specific CPU
      - eliminated CPU affinity race condition for -S/-M runs
      - expanded havoc mode added, on no cycle finds add extra splicing and
        MOpt into the mix
+     - fixed a bug in redqueen for strings
   - llvm_mode:
      - now supports llvm 12!
      - fixes for laf-intel float splitting (thanks to mark-griffin for
@@ -23,6 +27,12 @@ sending a mail to <afl-users+subscribe@googlegroups.com>.
      - LTO: autodictionary mode is a default
      - LTO: instrim instrumentation disabled, only classic support used
             as it is always better
+     - LTO: env var AFL_LLVM_DOCUMENT_IDS=file will document which edge ID
+            was given to which function during compilation
+     - LTO: single block functions were not implemented by default, fixed
+     - LTO: AFL_LLVM_SKIP_NEVERZERO behaviour was inversed, fixed
+     - setting AFL_LLVM_LAF_SPLIT_FLOATS now activates
+       AFL_LLVM_LAF_SPLIT_COMPARES
   - added honggfuzz mangle as a custom mutator in custom_mutators/honggfuzz
   - added afl-frida gum solution to examples/afl_frida (mostly imported
     from https://github.com/meme/hotwax/)

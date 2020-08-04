@@ -75,9 +75,6 @@ class CompareTransform : public ModulePass {
 
   }
 
- protected:
-  int be_quiet = 0;
-
  private:
   bool transformCmps(Module &M, const bool processStrcmp,
                      const bool processMemcmp, const bool processStrncmp,
@@ -358,7 +355,7 @@ bool CompareTransform::transformCmps(Module &M, const bool processStrcmp,
     Value *     VarStr;
     bool        HasStr1 = getConstantStringInfo(Str1P, Str1);
     bool        HasStr2 = getConstantStringInfo(Str2P, Str2);
-    uint64_t    constStrLen, constSizedLen, unrollLen;
+    uint64_t    constStrLen, unrollLen, constSizedLen = 0;
     bool        isMemcmp =
         !callInst->getCalledFunction()->getName().compare(StringRef("memcmp"));
     bool isSizedcmp = isMemcmp ||

@@ -57,13 +57,22 @@ ifeq "$(LLVM_UNSUPPORTED)" "1"
   $(warning llvm_mode only supports llvm versions 3.4 up to 12)
 endif
 
+LLVM_TOO_OLD=1
+
 ifeq "$(LLVM_MAJOR)" "9"
   $(info [+] llvm_mode detected llvm 9, enabling neverZero implementation)
+  LLVM_TOO_OLD=0
 endif
 
 ifeq "$(LLVM_NEW_API)" "1"
   $(info [+] llvm_mode detected llvm 10+, enabling neverZero implementation and c++14)
   LLVM_STDCXX = c++14
+  LLVM_TOO_OLD=0
+endif
+
+ifeq "$(LLVM_TOO_OLD)" "1"
+  $(info [!] llvm_mode detected an old version of llvm, upgrade to at least 9 or preferable 11!)
+  $(shell sleep 1)
 endif
 
 ifeq "$(LLVM_HAVE_LTO)" "1"
@@ -183,18 +192,24 @@ ifeq "$(LLVM_LTO)" "1"
       ifneq "$(shell readlink $(LLVM_BINDIR)/ld.lld 2>&1)" ""
         AFL_REAL_LD = $(LLVM_BINDIR)/ld.lld
       else
-        $(warn ld.lld not found, can not enable LTO mode)
+        $(warn ld.lld not found, cannot enable LTO mode)
         LLVM_LTO = 0
       endif
     endif
+  else
+    $(warn -flto is not working (LLVMgold.so not found?), cannot enable LTO mode)
+    LLVM_LTO = 0
   endif
 endif
 
 AFL_CLANG_FUSELD=
-ifneq "$(AFL_CLANG_FLTO)" ""
-ifeq "$(shell echo 'int main() {return 0; }' | $(CLANG_BIN) -x c - -fuse-ld=`command -v ld` -o .test 2>/dev/null && echo 1 || echo 0 ; rm -f .test )" "1"
-  AFL_CLANG_FUSELD=1
-endif
+ifeq "$(LLVM_LTO)" "1"
+  ifeq "$(shell echo 'int main() {return 0; }' | $(CLANG_BIN) -x c - -fuse-ld=`command -v ld` -o .test 2>/dev/null && echo 1 || echo 0 ; rm -f .test )" "1"
+    AFL_CLANG_FUSELD=1
+  else
+    $(warn -fuse-ld is not working, cannot enable LTO mode)
+    LLVM_LTO = 0
+  endif
 endif
 
 CFLAGS          ?= -O3 -funroll-loops -fPIC -D_FORTIFY_SOURCE=2

@@ -162,6 +162,7 @@ static void find_obj(u8 *argv0) {
 static void edit_params(u32 argc, char **argv, char **envp) {
 
   u8  fortify_set = 0, asan_set = 0, x_set = 0, bit_mode = 0;
+  u8  have_pic = 0;
   u8 *name;
 
   cc_params = ck_alloc((argc + 128) * sizeof(u8 *));
@@ -254,12 +255,6 @@ static void edit_params(u32 argc, char **argv, char **envp) {
   if (getenv("LAF_TRANSFORM_COMPARES") ||
       getenv("AFL_LLVM_LAF_TRANSFORM_COMPARES")) {
 
-    if (!be_quiet && getenv("AFL_LLVM_LTO_AUTODICTIONARY") && lto_mode)
-      WARNF(
-          "using AFL_LLVM_LAF_TRANSFORM_COMPARES together with "
-          "AFL_LLVM_LTO_AUTODICTIONARY makes no sense. Use only "
-          "AFL_LLVM_LTO_AUTODICTIONARY.");
-
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = "-load";
     cc_params[cc_par_cnt++] = "-Xclang";
@@ -268,7 +263,8 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
   }
 
-  if (getenv("LAF_SPLIT_COMPARES") || getenv("AFL_LLVM_LAF_SPLIT_COMPARES")) {
+  if (getenv("LAF_SPLIT_COMPARES") || getenv("AFL_LLVM_LAF_SPLIT_COMPARES") ||
+      getenv("AFL_LLVM_LAF_SPLIT_FLOATS")) {
 
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = "-load";
@@ -308,6 +304,11 @@ static void edit_params(u32 argc, char **argv, char **envp) {
   }
 
   if (lto_mode) {
+
+    if (cmplog_mode)
+      unsetenv("AFL_LLVM_LTO_AUTODICTIONARY");
+    else
+      setenv("AFL_LLVM_LTO_AUTODICTIONARY", "1", 1);
 
     cc_params[cc_par_cnt++] = alloc_printf("-fuse-ld=%s", AFL_REAL_LD);
     cc_params[cc_par_cnt++] = "-Wl,--allow-multiple-definition";
@@ -362,6 +363,19 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
   }
 
+  u32 idx;
+  if (lto_mode && argc > 1) {
+
+    for (idx = 1; idx < argc; idx++) {
+
+      if (!strncasecmp(argv[idx], "-fpic", 5)) have_pic = 1;
+
+    }
+
+    if (!have_pic) cc_params[cc_par_cnt++] = "-fPIC";
+
+  }
+
   /* Detect stray -v calls from ./configure scripts. */
 
   while (--argc) {
@@ -383,6 +397,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
       continue;
 
     if (lto_mode && !strncmp(cur, "-fuse-ld=", 9)) continue;
+    if (lto_mode && !strncmp(cur, "--ld-path=", 10)) continue;
 
     cc_params[cc_par_cnt++] = cur;
 
@@ -457,9 +472,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
   }
 
   if (getenv("AFL_NO_BUILTIN") || getenv("AFL_LLVM_LAF_TRANSFORM_COMPARES") ||
-      getenv("LAF_TRANSFORM_COMPARES") ||
-      (lto_mode && (getenv("AFL_LLVM_LTO_AUTODICTIONARY") ||
-                    getenv("AFL_LLVM_AUTODICTIONARY")))) {
+      getenv("LAF_TRANSFORM_COMPARES") || lto_mode) {
 
     cc_params[cc_par_cnt++] = "-fno-builtin-strcmp";
     cc_params[cc_par_cnt++] = "-fno-builtin-strncmp";
@@ -505,13 +518,15 @@ static void edit_params(u32 argc, char **argv, char **envp) {
       "int __afl_sharedmem_fuzzing = 1;"
       "extern unsigned int *__afl_fuzz_len;"
       "extern unsigned char *__afl_fuzz_ptr;"
-      "unsigned char *__afl_fuzz_alt_ptr;";
+      "unsigned char __afl_fuzz_alt[1024000];"
+      "unsigned char *__afl_fuzz_alt_ptr = __afl_fuzz_alt;";
   cc_params[cc_par_cnt++] =
       "-D__AFL_FUZZ_TESTCASE_BUF=(__afl_fuzz_ptr ? __afl_fuzz_ptr : "
-      "(__afl_fuzz_alt_ptr = (unsigned char *) malloc(1 * 1024 * 1024)))";
+      "__afl_fuzz_alt_ptr)";
   cc_params[cc_par_cnt++] =
-      "-D__AFL_FUZZ_TESTCASE_LEN=(__afl_fuzz_ptr ? *__afl_fuzz_len : read(0, "
-      "__afl_fuzz_alt_ptr, 1 * 1024 * 1024))";
+      "-D__AFL_FUZZ_TESTCASE_LEN=(__afl_fuzz_ptr ? *__afl_fuzz_len : "
+      "(*__afl_fuzz_len = read(0, __afl_fuzz_alt_ptr, 1024000)) == 0xffffffff "
+      "? 0 : *__afl_fuzz_len)";
 
   cc_params[cc_par_cnt++] =
       "-D__AFL_LOOP(_A)="
@@ -621,6 +636,10 @@ int main(int argc, char **argv, char **envp) {
       FATAL("you can not set AFL_LLVM_INSTRUMENT and AFL_TRACE_PC together");
 
   }
+
+  if ((getenv("AFL_LLVM_INSTRUMENT_FILE") || getenv("AFL_LLVM_WHITELIST")) &&
+      getenv("AFL_DONT_OPTIMIZE"))
+    FATAL("AFL_LLVM_INSTRUMENT_FILE and AFL_DONT_OPTIMIZE cannot be combined");
 
   if (getenv("AFL_LLVM_INSTRIM") || getenv("INSTRIM") ||
       getenv("INSTRIM_LIB")) {
@@ -775,7 +794,7 @@ int main(int argc, char **argv, char **envp) {
           "switching to classic instrumentation because "
           "AFL_LLVM_INSTRUMENT_FILE does not work with PCGUARD. Use "
           "-fsanitize-coverage-allowlist=allowlist.txt if you want to use "
-          "PCGUARD. See "
+          "PCGUARD. Requires llvm 12+. See "
           "https://clang.llvm.org/docs/"
           "SanitizerCoverage.html#partially-disabling-instrumentation");
 
@@ -831,7 +850,8 @@ int main(int argc, char **argv, char **envp) {
     FATAL(
         "Instrumentation type PCGUARD does not support "
         "AFL_LLVM_INSTRUMENT_FILE! Use "
-        "-fsanitize-coverage-allowlist=allowlist.txt instead, see "
+        "-fsanitize-coverage-allowlist=allowlist.txt instead (requires llvm "
+        "12+), see "
         "https://clang.llvm.org/docs/"
         "SanitizerCoverage.html#partially-disabling-instrumentation");
 
@@ -889,6 +909,8 @@ int main(int argc, char **argv, char **envp) {
         "AFL_NO_BUILTIN: compile for use with libtokencap.so\n"
         "AFL_PATH: path to instrumenting pass and runtime "
         "(afl-llvm-rt.*o)\n"
+        "AFL_LLVM_DOCUMENT_IDS: document edge IDs given to which function (LTO "
+        "only)\n"
         "AFL_QUIET: suppress verbose output\n"
         "AFL_USE_ASAN: activate address sanitizer\n"
         "AFL_USE_CFISAN: activate control flow sanitizer\n"

@@ -24,7 +24,7 @@ RUN apt-get update && apt-get upgrade -y && \
     apt-utils apt-transport-https ca-certificates gnupg dialog \
     libpixman-1-dev
 
-RUN echo deb http://apt.llvm.org/focal/ llvm-toolchain-focal main >> /etc/apt/sources.list && \
+RUN echo deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main >> /etc/apt/sources.list && \
     wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - 
   
 RUN echo deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main >> /etc/apt/sources.list && \
@@ -49,12 +49,16 @@ RUN rm -rf /var/cache/apt/archives/*
 ENV LLVM_CONFIG=llvm-config-11
 ENV AFL_SKIP_CPUFREQ=1
 
-RUN git clone https://github.com/AFLplusplus/AFLplusplus /AFLplusplus
-RUN cd /AFLplusplus && export REAL_CXX=g++-10 && export CC=gcc-10 && \
-    export CXX=g++-10 && make distrib && make install && make clean
-
 RUN git clone https://github.com/vanhauser-thc/afl-cov /afl-cov
-RUN cd /afl-cov && make install
+RUN cd /afl-cov && make install && cd ..
+
+COPY . /AFLplusplus
+WORKDIR /AFLplusplus
+
+RUN export REAL_CXX=g++-10 && export CC=gcc-10 && \
+    export CXX=g++-10 && make clean && \
+    make distrib && make install && make clean
 
 RUN echo 'alias joe="jupp --wordwrap"' >> ~/.bashrc
-
+RUN echo 'export PS1="[afl++]$PS1"' >> ~/.bashrc
+ENV IS_DOCKER="1"

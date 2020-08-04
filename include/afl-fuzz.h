@@ -82,6 +82,11 @@
   #include <sys/sysctl.h>
 #endif                           /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
 
+#if defined(__HAIKU__)
+  #include <kernel/OS.h>
+  #include <kernel/scheduler.h>
+#endif
+
 /* For systems that have sched_setaffinity; right now just Linux, but one
    can hope... */
 
@@ -545,7 +550,8 @@ typedef struct afl_state {
   u64 total_bitmap_size,                /* Total bit count for all bitmaps  */
       total_bitmap_entries;             /* Number of bitmaps counted        */
 
-  s32 cpu_core_count;                   /* CPU core count                   */
+  s32 cpu_core_count,                   /* CPU core count                   */
+      cpu_to_bind;                      /* bind to specific CPU             */
 
 #ifdef HAVE_AFFINITY
   s32 cpu_aff;                          /* Selected CPU core                */
